@@ -8,6 +8,12 @@ export interface InitOpts {
   endpoint: string
   /** Nivel por defecto de los errores no clasificados. */
   nivelPorDefecto?: 'error' | 'warning'
+  /**
+   * Identificador del release/versión desplegada (p.ej. el SHA del commit o 'v1.2.3').
+   * Si se define, viaja en el payload del error para que el motor pueda des-minificar
+   * el stack con los source maps subidos para ese (app, release).
+   */
+  release?: string
 }
 
 /**
@@ -249,7 +255,7 @@ export function reportarError(
   if (ahora - (ultimoEnvio.get(mensaje) ?? 0) < DEDUP_MS) return
   ultimoEnvio.set(mensaje, ahora)
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     app: opciones.app,
     mensaje,
     nivel: ctx?.nivel ?? opciones.nivelPorDefecto ?? 'error',
@@ -257,6 +263,8 @@ export function reportarError(
     url: ctx?.url ?? urlActual(),
     breadcrumbs: [...migajas], // copia del rastro: eventos previos al error
   }
+  // Si hay release definido, lo incluimos para que el motor des-minifique el stack.
+  if (opciones.release) payload.release = opciones.release
   try {
     void fetch(`${opciones.endpoint}/api/error`, {
       method: 'POST',

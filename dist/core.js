@@ -235,6 +235,9 @@ export function reportarError(err, ctx) {
         url: ctx?.url ?? urlActual(),
         breadcrumbs: [...migajas], // copia del rastro: eventos previos al error
     };
+    // Si hay release definido, lo incluimos para que el motor des-minifique el stack.
+    if (opciones.release)
+        payload.release = opciones.release;
     try {
         void fetch(`${opciones.endpoint}/api/error`, {
             method: 'POST',

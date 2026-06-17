@@ -5,6 +5,12 @@ export interface InitOpts {
     endpoint: string;
     /** Nivel por defecto de los errores no clasificados. */
     nivelPorDefecto?: 'error' | 'warning';
+    /**
+     * Identificador del release/versión desplegada (p.ej. el SHA del commit o 'v1.2.3').
+     * Si se define, viaja en el payload del error para que el motor pueda des-minificar
+     * el stack con los source maps subidos para ese (app, release).
+     */
+    release?: string;
 }
 /**
  * Migaja de pan: un evento previo a un error (estilo Sentry). Forma CONGELADA,
