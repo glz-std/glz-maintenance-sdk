@@ -1,0 +1,4 @@
+node_modules/
+*.log
+.DS_Store
+# dist/ SÍ se versiona: los consumidores hacen git-install y usan dist directamente.
