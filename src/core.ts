@@ -24,6 +24,19 @@ export function initMaintenance(opts: InitOpts): void {
   window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
     reportarError(e.reason, { url: urlActual() })
   })
+  // Registro al conectar: la app aparece en el tablero (estado ok) aunque no falle.
+  try {
+    void fetch(`${opts.endpoint}/api/registro`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ app: opts.app }),
+      keepalive: true,
+    }).catch(() => {
+      /* best-effort */
+    })
+  } catch {
+    /* nunca romper la app que nos usa */
+  }
 }
 
 /** Reporta un error manualmente. Fire-and-forget: nunca lanza ni bloquea la app. */
