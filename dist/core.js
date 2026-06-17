@@ -3,6 +3,27 @@
 let opciones = null;
 const ultimoEnvio = new Map();
 const DEDUP_MS = 10_000; // no repetir el mismo mensaje en esta ventana (anti-tormenta)
+// Ring-buffer de migajas: rastro de los últimos eventos antes de un error.
+const BREADCRUMBS_MAX = 20; // cap defensivo: solo las últimas N
+const BREADCRUMB_MSG_MAX = 200; // cap defensivo: mensaje recortado a ~200 chars
+const migajas = [];
+let enganchesPuestos = false; // evita doble parcheo si se llama initMaintenance dos veces
+/** Recorta a ~200 chars de forma segura (nunca lanza). */
+function recorta(texto) {
+    return texto.length > BREADCRUMB_MSG_MAX ? texto.slice(0, BREADCRUMB_MSG_MAX) : texto;
+}
+/** Añade una migaja al ring-buffer: recorta el mensaje y tira la más vieja si rebosa. */
+function anotarMigaja(m) {
+    try {
+        m.mensaje = recorta(m.mensaje);
+        migajas.push(m);
+        while (migajas.length > BREADCRUMBS_MAX)
+            migajas.shift();
+    }
+    catch {
+        /* jamás romper la app que nos usa por culpa de una migaja */
+    }
+}
 /** Arranca el reporter: engancha window.error y unhandledrejection. */
 export function initMaintenance(opts) {
     opciones = opts;
@@ -14,6 +35,8 @@ export function initMaintenance(opts) {
     window.addEventListener('unhandledrejection', (e) => {
         reportarError(e.reason, { url: urlActual() });
     });
+    // Captura del rastro de eventos previos al error (breadcrumbs estilo Sentry).
+    engancharMigajas();
     // Registro al conectar: la app aparece en el tablero (estado ok) aunque no falle.
     try {
         void fetch(`${opts.endpoint}/api/registro`, {
@@ -27,6 +50,170 @@ export function initMaintenance(opts) {
     }
     catch {
         /* nunca romper la app que nos usa */
+    }
+}
+/**
+ * Engancha la captura de migajas: clicks, navegación, console.error/warn y fetch.
+ * Solo en navegador, idempotente y a prueba de fallos (nunca lanza).
+ */
+function engancharMigajas() {
+    if (typeof window === 'undefined' || enganchesPuestos)
+        return;
+    enganchesPuestos = true;
+    // 1) Clicks (en captura, para no perderlos si la app los detiene).
+    try {
+        document.addEventListener('click', (e) => {
+            try {
+                anotarMigaja({ tipo: 'click', mensaje: 'click ' + describeObjetivo(e.target), ts: Date.now() });
+            }
+            catch {
+                /* best-effort */
+            }
+        }, true);
+    }
+    catch {
+        /* best-effort */
+    }
+    // 2) Navegación: envolver history.pushState + escuchar popstate.
+    try {
+        const pushOriginal = history.pushState;
+        history.pushState = function (...args) {
+            const r = pushOriginal.apply(this, args);
+            anotarMigaja({ tipo: 'nav', mensaje: '→ ' + rutaActual(), ts: Date.now() });
+            return r;
+        };
+        window.addEventListener('popstate', () => {
+            anotarMigaja({ tipo: 'nav', mensaje: '→ ' + rutaActual(), ts: Date.now() });
+        });
+    }
+    catch {
+        /* best-effort */
+    }
+    // 3) console.error / console.warn: registrar y SIEMPRE delegar en el original.
+    try {
+        parcheaConsola('error', 'error');
+        parcheaConsola('warn', 'warning');
+    }
+    catch {
+        /* best-effort */
+    }
+    // 4) fetch: registrar método + url + status; no romper ante error de red.
+    try {
+        if (typeof window.fetch === 'function') {
+            const fetchOriginal = window.fetch.bind(window);
+            window.fetch = function (input, init) {
+                const metodo = (init?.method ?? metodoDe(input) ?? 'GET').toUpperCase();
+                const url = urlDe(input);
+                return fetchOriginal(input, init).then((resp) => {
+                    try {
+                        anotarMigaja({
+                            tipo: 'fetch',
+                            mensaje: metodo + ' ' + url + ' → ' + resp.status,
+                            ts: Date.now(),
+                            nivel: resp.status >= 500 ? 'error' : resp.status >= 400 ? 'warning' : 'info',
+                        });
+                    }
+                    catch {
+                        /* best-effort */
+                    }
+                    return resp;
+                }, (err) => {
+                    // Error de red: registrar y re-lanzar para no alterar el comportamiento.
+                    try {
+                        anotarMigaja({
+                            tipo: 'fetch',
+                            mensaje: metodo + ' ' + url + ' → error de red',
+                            ts: Date.now(),
+                            nivel: 'error',
+                        });
+                    }
+                    catch {
+                        /* best-effort */
+                    }
+                    throw err;
+                });
+            };
+        }
+    }
+    catch {
+        /* best-effort */
+    }
+}
+/** Ruta corta para las migajas de navegación. */
+function rutaActual() {
+    return typeof location !== 'undefined' ? location.pathname : '';
+}
+/** Describe el objetivo de un click: tag + primer id/clase, o aria-label/texto recortado. */
+function describeObjetivo(target) {
+    try {
+        if (!(target instanceof Element))
+            return '(desconocido)';
+        const tag = target.tagName.toLowerCase();
+        if (target.id)
+            return tag + '#' + target.id.split(/\s+/)[0];
+        const clase = typeof target.className === 'string' ? target.className.trim().split(/\s+/)[0] : '';
+        if (clase)
+            return tag + '.' + clase;
+        const aria = target.getAttribute('aria-label');
+        if (aria)
+            return tag + ' "' + aria.trim() + '"';
+        const texto = (target.textContent ?? '').trim().replace(/\s+/g, ' ');
+        if (texto)
+            return tag + ' "' + (texto.length > 40 ? texto.slice(0, 40) : texto) + '"';
+        return tag;
+    }
+    catch {
+        return '(desconocido)';
+    }
+}
+/** Parchea un método de consola: anota la migaja y delega SIEMPRE en el original. */
+function parcheaConsola(metodo, nivel) {
+    const original = console[metodo].bind(console);
+    console[metodo] = (...args) => {
+        try {
+            anotarMigaja({ tipo: 'console', mensaje: args.map(textoDeArg).join(' '), ts: Date.now(), nivel });
+        }
+        catch {
+            /* best-effort */
+        }
+        original(...args);
+    };
+}
+/** Convierte un argumento de consola en texto legible sin lanzar. */
+function textoDeArg(a) {
+    if (typeof a === 'string')
+        return a;
+    if (a instanceof Error)
+        return a.message;
+    try {
+        return JSON.stringify(a);
+    }
+    catch {
+        return String(a);
+    }
+}
+/** Extrae la URL de cualquier entrada admitida por fetch. */
+function urlDe(input) {
+    try {
+        if (typeof input === 'string')
+            return input;
+        if (input instanceof URL)
+            return input.href;
+        if (input instanceof Request)
+            return input.url;
+        return String(input);
+    }
+    catch {
+        return '';
+    }
+}
+/** Extrae el método cuando la entrada de fetch es un Request. */
+function metodoDe(input) {
+    try {
+        return input instanceof Request ? input.method : undefined;
+    }
+    catch {
+        return undefined;
     }
 }
 /** Reporta un error manualmente. Fire-and-forget: nunca lanza ni bloquea la app. */
@@ -46,6 +233,7 @@ export function reportarError(err, ctx) {
         nivel: ctx?.nivel ?? opciones.nivelPorDefecto ?? 'error',
         stack: stackDe(err),
         url: ctx?.url ?? urlActual(),
+        breadcrumbs: [...migajas], // copia del rastro: eventos previos al error
     };
     try {
         void fetch(`${opciones.endpoint}/api/error`, {
