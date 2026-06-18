@@ -70,7 +70,7 @@ export function initMaintenance(opts: InitOpts): void {
     void fetch(`${opts.endpoint}/api/registro`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ app: opts.app }),
+      body: JSON.stringify({ app: opts.app, release: opts.release }),
       keepalive: true,
     }).catch(() => {
       /* best-effort */
