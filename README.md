@@ -95,6 +95,34 @@ await reportarMensajeServidor('cuota de API casi agotada', { nivel: 'warning' })
 
 Las `opts` (`{ app?, endpoint?, release? }`) siempre ganan al entorno, y el entorno al default horneado.
 
+## `/api/health` profundo (`@glz/maintenance/salud`)
+
+Un GET a la raíz miente: Vercel sirve el HTML aunque Supabase esté caído. Expón un
+`/api/health` que compruebe las dependencias reales y devuelva **503** si algo falla, y
+apunta ahí la sonda de uptime de GLZ Maintenance.
+
+```ts
+// app/api/health/route.ts
+import { respuestaSalud } from '@glz/maintenance/salud'
+export const dynamic = 'force-dynamic'
+
+export async function GET() {
+  return respuestaSalud({
+    release: process.env.VERCEL_GIT_COMMIT_SHA,
+    checks: {
+      supabase: async () => {
+        const { error } = await supabase.from('contactos').select('id').limit(1)
+        return !error
+      },
+      env: () => Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    },
+  })
+}
+```
+
+200 = sano · 503 = alguna dependencia caída (la sonda lo trata como caído). Las comprobaciones
+corren en paralelo con timeout (una que cuelga = fallo, no cuelga el endpoint).
+
 ## Notas
 
 - El `endpoint` es público (modelo DSN de Sentry): no lleva secretos.
