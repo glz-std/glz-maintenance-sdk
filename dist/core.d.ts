@@ -1,8 +1,8 @@
 export interface InitOpts {
-    /** Slug/nombre de la app, p.ej. 'MANDO', 'DXB'. Identifica el origen en GLZ Maintenance. */
-    app: string;
-    /** Base del motor, p.ej. 'https://maintenance.glzstudio.dev'. */
-    endpoint: string;
+    /** Slug/nombre de la app, p.ej. 'MANDO', 'DXB'. Si se omite, se lee de NEXT_PUBLIC_GLZ_APP. */
+    app?: string;
+    /** Base del motor. Si se omite, NEXT_PUBLIC_GLZ_MAINT_URL o el default horneado. */
+    endpoint?: string;
     /** Nivel por defecto de los errores no clasificados. */
     nivelPorDefecto?: 'error' | 'warning';
     /**
@@ -22,8 +22,9 @@ export interface Breadcrumb {
     ts: number;
     nivel?: 'info' | 'warning' | 'error';
 }
-/** Arranca el reporter: engancha window.error y unhandledrejection. */
-export declare function initMaintenance(opts: InitOpts): void;
+/** Arranca el reporter: engancha window.error y unhandledrejection.
+ *  Sin argumentos toma la config del entorno (NEXT_PUBLIC_GLZ_APP + endpoint horneado). */
+export declare function initMaintenance(opts?: InitOpts): void;
 /** Reporta un error manualmente. Fire-and-forget: nunca lanza ni bloquea la app. */
 export declare function reportarError(err: unknown, ctx?: {
     url?: string;

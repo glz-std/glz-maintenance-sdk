@@ -1,12 +1,16 @@
 {
   "name": "@glz/maintenance",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Reporter de errores hacia GLZ Maintenance (alternativa propia a Sentry, sin terceros)",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
     }
   },
   "files": ["dist"],
@@ -20,6 +24,7 @@
     "react": { "optional": true }
   },
   "devDependencies": {
+    "@types/node": "^20.19.0",
     "@types/react": "^19.2.0",
     "typescript": "^5.9.3"
   }

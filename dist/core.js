@@ -1,5 +1,6 @@
 // Núcleo del reporter: engancha errores globales y los manda a GLZ Maintenance.
 // Sin dependencias. Fire-and-forget: nunca lanza ni bloquea la app que lo usa.
+import { resolverConfig } from './config.js';
 let opciones = null;
 const ultimoEnvio = new Map();
 const DEDUP_MS = 10_000; // no repetir el mismo mensaje en esta ventana (anti-tormenta)
@@ -24,9 +25,16 @@ function anotarMigaja(m) {
         /* jamás romper la app que nos usa por culpa de una migaja */
     }
 }
-/** Arranca el reporter: engancha window.error y unhandledrejection. */
-export function initMaintenance(opts) {
-    opciones = opts;
+/** Arranca el reporter: engancha window.error y unhandledrejection.
+ *  Sin argumentos toma la config del entorno (NEXT_PUBLIC_GLZ_APP + endpoint horneado). */
+export function initMaintenance(opts = {}) {
+    const cfg = resolverConfig(opts);
+    opciones = {
+        app: cfg.app,
+        endpoint: cfg.endpoint,
+        release: cfg.release,
+        nivelPorDefecto: opts.nivelPorDefecto,
+    };
     if (typeof window === 'undefined')
         return;
     window.addEventListener('error', (e) => {
@@ -39,10 +47,10 @@ export function initMaintenance(opts) {
     engancharMigajas();
     // Registro al conectar: la app aparece en el tablero (estado ok) aunque no falle.
     try {
-        void fetch(`${opts.endpoint}/api/registro`, {
+        void fetch(`${opciones.endpoint}/api/registro`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ app: opts.app, release: opts.release }),
+            body: JSON.stringify({ app: opciones.app, release: opciones.release }),
             keepalive: true,
         }).catch(() => {
             /* best-effort */
