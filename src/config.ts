@@ -9,6 +9,10 @@
 
 export const ENDPOINT_POR_DEFECTO = 'https://maintenance.glzstudio.dev'
 
+// Entornos que NO reportan por defecto: local y los TESTS (vitest/CI ponen NODE_ENV='test').
+// Evita que el test suite ensucie el motor de producción con errores sintéticos.
+const NO_REPORTAN = new Set(['development', 'test'])
+
 function env(clave: string): string | undefined {
   return typeof process !== 'undefined' && process.env ? process.env[clave] : undefined
 }
@@ -72,8 +76,10 @@ export function resolverConfig(opts?: ConfigOpts): ConfigResuelta {
   const release = opts?.release || env('NEXT_PUBLIC_RELEASE') || env('GLZ_RELEASE') || undefined
   const entorno =
     opts?.entorno || env('NEXT_PUBLIC_GLZ_ENV') || env('GLZ_ENV') || derivarEntorno()
+  // Por defecto NO se reporta desde entornos no productivos (local y, sobre todo, TESTS:
+  // un reporter jamás debe disparar POSTs reales al motor cuando corre el test suite/CI).
   const activo = opts?.soloEntornos
     ? opts.soloEntornos.includes(entorno)
-    : entorno !== 'development' || opts?.reportarEnDesarrollo === true
+    : !NO_REPORTAN.has(entorno) || opts?.reportarEnDesarrollo === true
   return { app, endpoint, release, entorno, activo }
 }

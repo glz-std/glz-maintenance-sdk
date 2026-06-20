@@ -36,7 +36,8 @@ sin fragmentar la app (un solo `error-<app>`, desglosado por entorno dentro). No
   2. Genérico (Docker, VPS, Railway, Render, Fly, local…): `NODE_ENV`.
   3. Sin pistas → `development`.
 
-Gating: por defecto **`development` (local) NO reporta**; el resto sí. Para afinar:
+Gating: por defecto **`development` (local) y `test` (vitest/CI) NO reportan** (un reporter
+no debe disparar POSTs reales al motor desde el test suite); el resto sí. Para afinar:
 `initMaintenance({ soloEntornos: ['production'] })` (allowlist estricta) o
 `{ reportarEnDesarrollo: true }` (incluir local). Aplica igual en `initServidor`.
 
