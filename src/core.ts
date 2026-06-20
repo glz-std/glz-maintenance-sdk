@@ -1,21 +1,14 @@
 // Núcleo del reporter: engancha errores globales y los manda a GLZ Maintenance.
 // Sin dependencias. Fire-and-forget: nunca lanza ni bloquea la app que lo usa.
 
-import { resolverConfig } from './config.js'
+import { resolverConfig, type ConfigOpts } from './config.js'
 
-export interface InitOpts {
-  /** Slug/nombre de la app, p.ej. 'MANDO', 'DXB'. Si se omite, se lee de NEXT_PUBLIC_GLZ_APP. */
-  app?: string
-  /** Base del motor. Si se omite, NEXT_PUBLIC_GLZ_MAINT_URL o el default horneado. */
-  endpoint?: string
+// Hereda app/endpoint/release/entorno/soloEntornos/reportarEnDesarrollo de ConfigOpts.
+// En CLIENTE conviene pasar `app` y `entorno` explícitos (Next no inyecta accesos
+// dinámicos a process.env en el bundle del navegador).
+export interface InitOpts extends ConfigOpts {
   /** Nivel por defecto de los errores no clasificados. */
   nivelPorDefecto?: 'error' | 'warning'
-  /**
-   * Identificador del release/versión desplegada (p.ej. el SHA del commit o 'v1.2.3').
-   * Si se define, viaja en el payload del error para que el motor pueda des-minificar
-   * el stack con los source maps subidos para ese (app, release).
-   */
-  release?: string
 }
 
 /**
@@ -35,6 +28,8 @@ interface OpcionesResueltas {
   endpoint: string
   nivelPorDefecto?: 'error' | 'warning'
   release?: string
+  entorno: string
+  activo: boolean
 }
 let opciones: OpcionesResueltas | null = null
 const ultimoEnvio = new Map<string, number>()
@@ -71,8 +66,11 @@ export function initMaintenance(opts: InitOpts = {}): void {
     endpoint: cfg.endpoint,
     release: cfg.release,
     nivelPorDefecto: opts.nivelPorDefecto,
+    entorno: cfg.entorno,
+    activo: cfg.activo,
   }
   if (typeof window === 'undefined') return
+  if (!opciones.activo) return // entorno no reportable (p.ej. local) → ni enganches ni registro
   window.addEventListener('error', (e: ErrorEvent) => {
     reportarError(e.error ?? e.message, { url: urlActual() })
   })
@@ -86,7 +84,11 @@ export function initMaintenance(opts: InitOpts = {}): void {
     void fetch(`${opciones.endpoint}/api/registro`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ app: opciones.app, release: opciones.release }),
+      body: JSON.stringify({
+        app: opciones.app,
+        release: opciones.release,
+        entorno: opciones.entorno,
+      }),
       keepalive: true,
     }).catch(() => {
       /* best-effort */
@@ -263,7 +265,7 @@ export function reportarError(
   err: unknown,
   ctx?: { url?: string; nivel?: 'error' | 'warning' },
 ): void {
-  if (!opciones) return
+  if (!opciones || !opciones.activo) return
   const mensaje = mensajeDe(err)
   if (mensaje === '') return
 
@@ -277,6 +279,7 @@ export function reportarError(
     nivel: ctx?.nivel ?? opciones.nivelPorDefecto ?? 'error',
     stack: stackDe(err),
     url: ctx?.url ?? urlActual(),
+    entorno: opciones.entorno,
     breadcrumbs: [...migajas], // copia del rastro: eventos previos al error
   }
   // Si hay release definido, lo incluimos para que el motor des-minifique el stack.

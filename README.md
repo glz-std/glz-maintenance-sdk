@@ -16,11 +16,29 @@ pnpm add github:GleZz24/glz-maintenance-sdk
 - `NEXT_PUBLIC_GLZ_APP` (cliente) / `GLZ_APP` (servidor) — nombre de la app en el tablero.
 - `NEXT_PUBLIC_GLZ_MAINT_URL` / `GLZ_MAINT_URL` — opcional, override del endpoint (por defecto, infra GLZ).
 - `NEXT_PUBLIC_RELEASE` / `GLZ_RELEASE` — opcional, SHA/versión del deploy (des-minifica stacks).
+- `NEXT_PUBLIC_GLZ_ENV` / `GLZ_ENV` — opcional, etiqueta del entorno (production/preview/dev…).
+  Si no se fija, se autodetecta (ver más abajo).
 
 > **Matiz del cliente:** Next solo inyecta en el bundle de navegador los **literales**
-> `process.env.NEXT_PUBLIC_*`, no los accesos dinámicos. Por eso en el **cliente** se pasa
-> `app` explícito a `initMaintenance` (el endpoint sí va horneado). En **servidor** todo se
-> resuelve de entorno sin tocar nada.
+> `process.env.NEXT_PUBLIC_*`, no los accesos dinámicos. Por eso en el **cliente** se pasan
+> `app` y `entorno` explícitos a `initMaintenance` (el endpoint sí va horneado). En **servidor**
+> todo se resuelve de entorno sin tocar nada.
+
+## Conciencia de entorno (agnóstico del host)
+
+Cada reporte lleva un campo `entorno` para que el tablero separe producción de dev/preview
+sin fragmentar la app (un solo `error-<app>`, desglosado por entorno dentro). No asume Vercel:
+
+- **Fijar explícito (vale en cualquier host):** `GLZ_ENV` en servidor, o `entorno` en
+  `initMaintenance({ entorno })` en cliente. Manda sobre todo lo demás.
+- **Autodetección de cortesía** si no se fija nada:
+  1. Vercel: `production` directo; si no, la rama de git (`VERCEL_GIT_COMMIT_REF`) separa dev/preview.
+  2. Genérico (Docker, VPS, Railway, Render, Fly, local…): `NODE_ENV`.
+  3. Sin pistas → `development`.
+
+Gating: por defecto **`development` (local) NO reporta**; el resto sí. Para afinar:
+`initMaintenance({ soloEntornos: ['production'] })` (allowlist estricta) o
+`{ reportarEnDesarrollo: true }` (incluir local). Aplica igual en `initServidor`.
 
 ## Enchufar un proyecto Next (plug&play)
 

@@ -34,9 +34,13 @@ export function initMaintenance(opts = {}) {
         endpoint: cfg.endpoint,
         release: cfg.release,
         nivelPorDefecto: opts.nivelPorDefecto,
+        entorno: cfg.entorno,
+        activo: cfg.activo,
     };
     if (typeof window === 'undefined')
         return;
+    if (!opciones.activo)
+        return; // entorno no reportable (p.ej. local) → ni enganches ni registro
     window.addEventListener('error', (e) => {
         reportarError(e.error ?? e.message, { url: urlActual() });
     });
@@ -50,7 +54,11 @@ export function initMaintenance(opts = {}) {
         void fetch(`${opciones.endpoint}/api/registro`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ app: opciones.app, release: opciones.release }),
+            body: JSON.stringify({
+                app: opciones.app,
+                release: opciones.release,
+                entorno: opciones.entorno,
+            }),
             keepalive: true,
         }).catch(() => {
             /* best-effort */
@@ -226,7 +234,7 @@ function metodoDe(input) {
 }
 /** Reporta un error manualmente. Fire-and-forget: nunca lanza ni bloquea la app. */
 export function reportarError(err, ctx) {
-    if (!opciones)
+    if (!opciones || !opciones.activo)
         return;
     const mensaje = mensajeDe(err);
     if (mensaje === '')
@@ -241,6 +249,7 @@ export function reportarError(err, ctx) {
         nivel: ctx?.nivel ?? opciones.nivelPorDefecto ?? 'error',
         stack: stackDe(err),
         url: ctx?.url ?? urlActual(),
+        entorno: opciones.entorno,
         breadcrumbs: [...migajas], // copia del rastro: eventos previos al error
     };
     // Si hay release definido, lo incluimos para que el motor des-minifique el stack.

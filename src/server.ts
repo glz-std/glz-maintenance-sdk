@@ -42,7 +42,8 @@ async function postar(ruta: string, cuerpo: Record<string, unknown>): Promise<vo
  */
 export async function initServidor(opts?: ConfigOpts): Promise<void> {
   cfg = resolverConfig(opts)
-  await postar('/api/registro', { app: cfg.app, release: cfg.release })
+  if (!cfg.activo) return // entorno no reportable (p.ej. local) → no registrar
+  await postar('/api/registro', { app: cfg.app, release: cfg.release, entorno: cfg.entorno })
 }
 
 /** Reporta una excepción de servidor. `contexto` se anexa al mensaje. Nunca lanza. */
@@ -50,14 +51,16 @@ export async function reportarErrorServidor(
   err: unknown,
   ctx?: { nivel?: Nivel; contexto?: string },
 ): Promise<void> {
+  const c = conf()
+  if (!c.activo) return
   const e = err instanceof Error ? err : new Error(typeof err === 'string' ? err : seguro(err))
   const mensaje = ctx?.contexto ? `${e.message} · ${ctx.contexto}` : e.message
   if (!mensaje) return
-  const c = conf()
   await postar('/api/error', {
     app: c.app,
     mensaje,
     nivel: ctx?.nivel ?? 'error',
+    entorno: c.entorno,
     ...(e.stack ? { stack: e.stack } : {}),
     ...(c.release ? { release: c.release } : {}),
   })
@@ -70,10 +73,12 @@ export async function reportarMensajeServidor(
 ): Promise<void> {
   if (!mensaje) return
   const c = conf()
+  if (!c.activo) return
   await postar('/api/error', {
     app: c.app,
     mensaje,
     nivel: ctx?.nivel ?? 'error',
+    entorno: c.entorno,
     ...(c.release ? { release: c.release } : {}),
   })
 }

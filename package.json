@@ -1,6 +1,6 @@
 {
   "name": "@glz/maintenance",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Reporter de errores hacia GLZ Maintenance (alternativa propia a Sentry, sin terceros)",
   "type": "module",
   "exports": {
