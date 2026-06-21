@@ -1,0 +1,4 @@
+# Configuración pnpm del SDK @glz/maintenance.
+# Cooldown anti supply-chain (N3): no instalar un paquete hasta 72h (4320 min) tras su
+# publicación; ventana para detectar un publish malicioso antes de adoptarlo.
+minimumReleaseAge: 4320
