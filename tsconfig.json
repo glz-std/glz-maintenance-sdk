@@ -4,6 +4,10 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    // TS6 dejó de auto-incluir los tipos globales de @types/node cuando el lib
+    // contiene DOM (cambio de comportamiento de la inclusión automática de @types).
+    // El código usa el global `process` (config.ts), así que se declara explícito.
+    "types": ["node"],
     "jsx": "react-jsx",
     "declaration": true,
     "outDir": "dist",

@@ -1,0 +1,43 @@
+name: CI
+
+# Guardarraíl anti-drift de dist/: el SDK se consume vía git-install y los
+# consumidores usan el dist/ COMMITEADO (no compilan). Por eso dist/ DEBE estar
+# siempre en sync con src/. Este workflow recompila en cada push/PR y FALLA si el
+# dist/ generado difiere del commiteado, evitando que una versión futura publique
+# un dist/ desincronizado.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-verify-dist:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      # Lee la versión de pnpm de package.json "packageManager".
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      # Node alineado con engines (>=20); usa 24 (versión de runtime/local).
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      # Si la compilación produjo un dist/ distinto al commiteado, falla.
+      - name: Verify dist/ in sync with src/
+        run: git diff --exit-code dist/
