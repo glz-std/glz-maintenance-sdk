@@ -17,5 +17,8 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Los tests (*.test.ts) corren con tsx (node:test); NO se compilan a dist/
+  // (el dist/ commiteado solo lleva el SDK publicable; el CI verifica el sync).
+  "exclude": ["src/**/*.test.ts"]
 }

@@ -9,6 +9,104 @@ import { resolverConfig, type ConfigOpts } from './config.js'
 export interface InitOpts extends ConfigOpts {
   /** Nivel por defecto de los errores no clasificados. */
   nivelPorDefecto?: 'error' | 'warning'
+  /**
+   * Patrones extra para clasificar un rechazo no manejado como RUIDO (no se reporta).
+   * Se prueban contra el mensaje y el stack del `reason`. ADITIVOS al filtro base
+   * de SW/extensiones: amplían, no sustituyen. Solo aplican en `unhandledrejection`.
+   * Ej: `patronesRuido: [/ResizeObserver loop/, /Non-Error promise rejection/]`.
+   */
+  patronesRuido?: RegExp[]
+  /**
+   * Gancho para clasificar un rechazo no manejado como RUIDO (no se reporta).
+   * Devuelve `true` para descartar. ADITIVO al filtro base de SW/extensiones (si
+   * cualquiera marca ruido, se descarta). Fail-soft: si lanza, se ignora y se sigue
+   * con el filtro base. Solo aplica en `unhandledrejection`.
+   * Ej: `filtroRuido: (r) => r instanceof Error && /Load failed/.test(r.message)`.
+   */
+  filtroRuido?: (reason: unknown) => boolean
+}
+
+/** Opciones del clasificador de ruido, extensibles por proyecto sin tocar el SDK. */
+export interface OpcionesRuido {
+  patronesRuido?: RegExp[]
+  filtroRuido?: (reason: unknown) => boolean
+}
+
+// Frames cuyo ORIGEN es registro de service worker. Detectamos por el origen del
+// frame, no por palabras sueltas del mensaje (un bug real puede decir "service worker").
+const RE_FRAME_SW =
+  /(?:registerSW\.js|serviceWorker\.register|navigator\.serviceWorker|ServiceWorkerRegistration)/i
+// Frames cuyo ORIGEN es una extensión del navegador (esquemas propios de extensión).
+const RE_FRAME_EXTENSION = /(?:chrome-extension|moz-extension|safari-web-extension):\/\//i
+// Marcadores de que un frame pertenece al BUNDLE PROPIO de la app (regla de oro:
+// si el stack toca esto, NO se filtra — no nos tragamos bugs reales, incl. los del SW de la app).
+const RE_FRAME_PROPIO = /(?:\/_next\/|\/assets\/|\/chunks\/)/i
+
+/**
+ * ¿Es este rechazo RUIDO de registro de SW o de una extensión del navegador?
+ * Decide por el ORIGEN DEL STACK, nunca por palabras sueltas. Función PURA y a
+ * prueba de fallos: ante cualquier excepción devuelve `false` (fail-soft: preferimos
+ * reportar de más antes que tragarnos un error real).
+ *
+ * REGLA DE ORO del filtro base: si el stack contiene AL MENOS UN frame del bundle
+ * propio (`/_next/`, `/assets/`, `/chunks/`, o el origin de la app), NO se filtra.
+ *
+ * Los ganchos `patronesRuido`/`filtroRuido` son ADITIVOS y NO respetan la regla de
+ * oro (el proyecto sabe lo que descarta): si cualquiera marca ruido, devuelve `true`.
+ */
+export function esRuidoSW(reason: unknown, opts?: OpcionesRuido): boolean {
+  try {
+    // 1) Ganchos custom del proyecto (aditivos). Cada uno fail-soft por separado.
+    if (opts?.filtroRuido) {
+      try {
+        if (opts.filtroRuido(reason) === true) return true
+      } catch {
+        /* gancho roto: ignorar y seguir con el filtro base */
+      }
+    }
+    if (opts?.patronesRuido && opts.patronesRuido.length > 0) {
+      const texto = textoParaPatron(reason)
+      for (const re of opts.patronesRuido) {
+        try {
+          if (re.test(texto)) return true
+        } catch {
+          /* regexp problemática: ignorar */
+        }
+      }
+    }
+
+    // 2) Filtro base por origen del stack.
+    const stack = stackDe(reason)
+    if (!stack) return false // sin stack no podemos demostrar que sea ruido
+
+    const lineas = stack
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+
+    let frameSenal = false // ¿hay algún frame de SW o extensión?
+    for (const linea of lineas) {
+      // Regla de oro: un frame del bundle propio anula el filtrado de inmediato.
+      if (RE_FRAME_PROPIO.test(linea)) return false
+      if (RE_FRAME_SW.test(linea) || RE_FRAME_EXTENSION.test(linea)) {
+        frameSenal = true
+      }
+    }
+    return frameSenal
+  } catch {
+    return false // fail-soft total: ante la duda, reportar (no tragar)
+  }
+}
+
+/** Texto (mensaje + stack) sobre el que prueban los patronesRuido custom. */
+function textoParaPatron(reason: unknown): string {
+  try {
+    const msg = mensajeDe(reason)
+    const stack = stackDe(reason) ?? ''
+    return stack ? msg + '\n' + stack : msg
+  } catch {
+    return ''
+  }
 }
 
 /**
@@ -30,6 +128,9 @@ interface OpcionesResueltas {
   release?: string
   entorno: string
   activo: boolean
+  /** Ganchos del clasificador de ruido (solo se usan en unhandledrejection). */
+  patronesRuido?: RegExp[]
+  filtroRuido?: (reason: unknown) => boolean
 }
 let opciones: OpcionesResueltas | null = null
 const ultimoEnvio = new Map<string, number>()
@@ -68,6 +169,8 @@ export function initMaintenance(opts: InitOpts = {}): void {
     nivelPorDefecto: opts.nivelPorDefecto,
     entorno: cfg.entorno,
     activo: cfg.activo,
+    patronesRuido: opts.patronesRuido,
+    filtroRuido: opts.filtroRuido,
   }
   if (typeof window === 'undefined') return
   if (!opciones.activo) return // entorno no reportable (p.ej. local) → ni enganches ni registro
@@ -75,6 +178,25 @@ export function initMaintenance(opts: InitOpts = {}): void {
     reportarError(e.error ?? e.message, { url: urlActual() })
   })
   window.addEventListener('unhandledrejection', (e: PromiseRejectionEvent) => {
+    // Filtra el RUIDO del registro del SW / extensiones del navegador ANTES de reportar.
+    // (Una extensión que envuelve navigator.serviceWorker.register y rechaza con "Rejected"
+    // NO es un bug de la app.) El handler 'error' síncrono se deja intacto.
+    if (
+      opciones &&
+      esRuidoSW(e.reason, {
+        patronesRuido: opciones.patronesRuido,
+        filtroRuido: opciones.filtroRuido,
+      })
+    ) {
+      // Migaja de auditoría (nivel info: NO se reporta), por si hay que depurar el filtro.
+      anotarMigaja({
+        tipo: 'console',
+        mensaje: 'unhandledrejection-sw-ignorado: ' + mensajeDe(e.reason),
+        ts: Date.now(),
+        nivel: 'info',
+      })
+      return
+    }
     reportarError(e.reason, { url: urlActual() })
   })
   // Captura del rastro de eventos previos al error (breadcrumbs estilo Sentry).

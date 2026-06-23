@@ -75,6 +75,40 @@ import { MaintenanceBoundary } from '@glz/maintenance'
 <MaintenanceBoundary><App /></MaintenanceBoundary>
 ```
 
+## Filtro de ruido del Service Worker / extensiones (cliente)
+
+El handler de `unhandledrejection` recibe rechazos que **no son bugs de la app**: una
+extensión del navegador (p.ej. una que envuelve `navigator.serviceWorker.register`) puede
+rechazar con `"Rejected"` y, sin filtro, eso llegaba al tablero como un error. Desde v0.5.0,
+antes de reportar un `unhandledrejection` se descarta el ruido **por el ORIGEN del stack**
+(no por palabras sueltas):
+
+- Se filtra si el stack es **exclusivamente** frames de registro de SW (`registerSW.js`,
+  `serviceWorker.register`, `navigator.serviceWorker`, `ServiceWorkerRegistration`) o de
+  esquema de extensión (`chrome-extension://`, `moz-extension://`, `safari-web-extension://`).
+- **Regla de oro:** si el stack contiene **al menos un frame del bundle propio**
+  (`/_next/`, `/assets/`, `/chunks/`), **NO se filtra** — así no se tragan bugs reales,
+  incluidos los del SW de la propia app.
+- Fail-soft: ante cualquier duda o excepción, **se reporta** (no se descarta).
+
+El handler de `error` síncrono y `reportarError` manual **no se tocan**: filtran nada.
+
+### Extender o anular el filtro sin tocar el SDK
+
+```ts
+initMaintenance({
+  app: 'DXB',
+  // Patrones extra (se prueban contra mensaje + stack del reason):
+  patronesRuido: [/ResizeObserver loop/, /Non-Error promise rejection/],
+  // o un gancho a medida (true = descartar):
+  filtroRuido: (r) => r instanceof Error && /Load failed/.test(r.message),
+})
+```
+
+`patronesRuido` y `filtroRuido` son **aditivos** al filtro base (si cualquiera marca ruido,
+se descarta) y solo aplican en `unhandledrejection`. La función pura `esRuidoSW(reason, opts?)`
+se exporta por si un proyecto quiere clasificar por su cuenta.
+
 ## Avisos manuales
 
 ```ts
@@ -90,7 +124,7 @@ await reportarMensajeServidor('cuota de API casi agotada', { nivel: 'warning' })
 
 ## API
 
-- **`@glz/maintenance`** (cliente): `initMaintenance(opts?)`, `reportarError(err, ctx?)`, `MaintenanceBoundary`.
+- **`@glz/maintenance`** (cliente): `initMaintenance(opts?)`, `reportarError(err, ctx?)`, `esRuidoSW(reason, opts?)`, `MaintenanceBoundary`.
 - **`@glz/maintenance/server`** (Node/edge): `initServidor(opts?)`, `reportarErrorServidor(err, ctx?)`, `reportarMensajeServidor(mensaje, ctx?)`, `onRequestError`.
 
 Las `opts` (`{ app?, endpoint?, release? }`) siempre ganan al entorno, y el entorno al default horneado.
@@ -132,3 +166,5 @@ corren en paralelo con timeout (una que cuelga = fallo, no cuelga el endpoint).
 - React es peer dependency **opcional**: sin React, usa solo las funciones de captura.
 - `dist/` se versiona (git-install lo usa directamente). Tras cambiar `src/`, ejecuta
   `pnpm build` y commitea `dist/`.
+- Tests con el runner nativo de Node vía `tsx`: `pnpm test` (`tsx --test src/*.test.ts`).
+  Los `*.test.ts` se excluyen del build (no entran en `dist/`).

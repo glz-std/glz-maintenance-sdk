@@ -5,5 +5,11 @@
 //   initMaintenance({ app: 'MANDO', endpoint: 'https://maintenance.glzstudio.dev' })
 //   ...envolver <App/> en <MaintenanceBoundary> para cazar la pantalla blanca.
 
-export { initMaintenance, reportarError, type InitOpts } from './core.js'
+export {
+  initMaintenance,
+  reportarError,
+  esRuidoSW,
+  type InitOpts,
+  type OpcionesRuido,
+} from './core.js'
 export { MaintenanceBoundary } from './boundary.js'
