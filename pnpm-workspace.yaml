@@ -2,3 +2,8 @@
 # Cooldown anti supply-chain (N3): no instalar un paquete hasta 72h (4320 min) tras su
 # publicación; ventana para detectar un publish malicioso antes de adoptarlo.
 minimumReleaseAge: 4320
+# Aprobamos SOLO el build de esbuild (lo usa tsx, el runner de los tests). pnpm bloquea por
+# defecto los scripts de instalación (defensa supply-chain); el binario de plataforma ya viene
+# en @esbuild/<plat>.
+allowBuilds:
+  esbuild: true

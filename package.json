@@ -17,24 +17,30 @@
       "default": "./dist/salud.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "packageManager": "pnpm@11.5.0",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npx --yes tsx --test src/*.test.ts"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test src/*.test.ts"
   },
   "peerDependencies": {
     "react": ">=18"
   },
   "peerDependenciesMeta": {
-    "react": { "optional": true }
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^20.19.0",
     "@types/react": "^19.2.0",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   }
 }

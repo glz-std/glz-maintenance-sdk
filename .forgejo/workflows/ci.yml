@@ -1,0 +1,53 @@
+name: CI
+
+# Gate de calidad + seguridad del SDK @glz/maintenance en el forge. El SDK es backbone de
+# telemetría de 3 consumidores (DXB cliente + Analytics + Maintenance), así que su supply-chain
+# importa: gate OSV bloqueante (igual que analytics/maint), typecheck, tests y verificación de
+# que dist/ (consumido vía git-install, NO se recompila aguas abajo) está en sync con src/.
+# Puebla la sonda ci-sdk del monitor (lee de Forgejo Actions). Runner self-hosted (label
+# 'docker') sobre node:22-bookworm. GitHub conserva su propio CI (DXB consume el SDK por github:).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: Checks (OSV, typecheck, test, build, dist-sync)
+    runs-on: docker
+    container:
+      image: node:22-bookworm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Activar pnpm (corepack)
+        run: |
+          corepack enable
+          corepack prepare --activate
+          pnpm --version
+      - run: pnpm install --frozen-lockfile
+      - name: OSV-Scanner (malware + CVEs)
+        # Gate supply-chain bloqueante: feed de malware de OpenSSF + CVEs sobre el lockfile.
+        # Binario de release PINEADO (v2.4.0). Falla ante cualquier hallazgo.
+        run: |
+          if ! command -v curl >/dev/null 2>&1; then
+            apt-get update && apt-get install -y --no-install-recommends curl
+          fi
+          curl -fsSL -o /usr/local/bin/osv-scanner \
+            https://github.com/google/osv-scanner/releases/download/v2.4.0/osv-scanner_linux_amd64
+          chmod +x /usr/local/bin/osv-scanner
+          osv-scanner scan source --lockfile=pnpm-lock.yaml
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: dist/ en sync con src/
+        # El SDK se consume por git-install usando el dist/ COMMITEADO; debe ir siempre en sync.
+        run: git diff --exit-code dist/
