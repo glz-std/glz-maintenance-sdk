@@ -23,7 +23,7 @@ jobs:
 
       # Lee la versión de pnpm de package.json "packageManager".
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       # Node alineado con engines (>=20); usa 24 (versión de runtime/local).
       - name: Setup Node
