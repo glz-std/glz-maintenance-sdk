@@ -30,7 +30,7 @@
     "test": "tsx --test src/*.test.ts"
   },
   "dependencies": {
-    "@sentry/browser": "^10.64.0",
+    "@sentry/browser": "^11.1.0",
     "@sentry/node": "^10.64.0"
   },
   "peerDependencies": {
